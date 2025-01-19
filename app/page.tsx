@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import { getTemplates } from '@/lib/db'
+import { Toaster } from "@/components/ui/toaster"
+ 
 
 export default async function Home() {
   const templates = await getTemplates()
@@ -19,6 +21,7 @@ export default async function Home() {
       <Link href="/edit/new" className="mt-4 inline-block bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
         Create New Template
       </Link>
+      <Toaster/>
     </main>
   )
 }

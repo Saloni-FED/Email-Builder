@@ -5,9 +5,11 @@ import { Template, TemplateSection } from '@/lib/types'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { toast } from "@/components/ui/use-toast"
+import { useToast } from "@/hooks/use-toast"
+
 
 export default function TemplateBuilder({ initialTemplate }: { initialTemplate?: Template }) {
+  const { toast } = useToast()
   const [template, setTemplate] = useState<Template>(initialTemplate || {
     id: '',
     name: '',
