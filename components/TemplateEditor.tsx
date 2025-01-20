@@ -1,40 +1,99 @@
-'use client'
+"use client"
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Template, TemplateSection } from '@/lib/db'
+import { useState, useRef } from "react"
+import { useRouter } from "next/navigation"
+import { motion, AnimatePresence } from "framer-motion"
+import type { Template, TemplateSection } from "@/lib/db"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { saveTemplate } from '@/app/actions'
+import { Toolbar, ToolbarButton } from "@/components/ui/toolbar"
+import { Panel, PanelHeader } from "@/components/ui/panel"
+import { ColorPicker } from "./ColorPicker"
+import { saveTemplate } from "@/app/actions"
+import { cn } from "@/lib/utils"
+import {
+  Bold,
+  Italic,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  ImageIcon,
+  Type,
+  Square,
+  MousePointer,
+  Save,
+  Download,
+  Plus,
+  Menu,
+} from "lucide-react"
 
 export default function TemplateEditor({ template }: { template: Template }) {
+  const allowedSectionTypes = Array.from(new Set(template.sections.map((section) => section.type)))
   const [name, setName] = useState(template.name)
   const [subject, setSubject] = useState(template.subject)
   const [sections, setSections] = useState(template.sections)
   const [isSaving, setIsSaving] = useState(false)
+  const [selectedTool, setSelectedTool] = useState("pointer")
+  const [selectedSection, setSelectedSection] = useState<number | null>(null)
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
   const handleSave = async () => {
     setIsSaving(true)
-    const updatedTemplate = await saveTemplate({ ...template, name, subject, sections })
+    await saveTemplate({ ...template, name, subject, sections })
     setIsSaving(false)
-    router.push('/')
+    router.push("/")
   }
 
-  const handleAddSection = (type: TemplateSection['type']) => {
-    setSections([...sections, { type, content: '', style: {} }])
+  const handleAddSection = (type: TemplateSection["type"]) => {
+    if (!allowedSectionTypes.includes(type)) return
+    const newSection = {
+      type,
+      content: "",
+      style: {
+        color: "#000000",
+        backgroundColor: "#FFFFFF",
+        fontSize: "16px",
+        textAlign: "left",
+        width: "100%",
+        height: "auto",
+      },
+    }
+    setSections([...sections, newSection])
+    setSelectedSection(sections.length)
   }
 
-  const handleUpdateSection = (index: number, updatedSection: TemplateSection) => {
-    const newSections = [...sections]
-    newSections[index] = updatedSection
-    setSections(newSections)
+  const handleImageUpload = async (file: File) => {
+    return new Promise<string>((resolve) => {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        if (typeof reader.result === "string") {
+          if (selectedSection !== null) {
+            const newSections = [...sections]
+            newSections[selectedSection] = {
+              ...newSections[selectedSection],
+              content: reader.result,
+            }
+            setSections(newSections)
+            resolve(reader.result)
+          }
+        }
+      }
+      reader.readAsDataURL(file)
+    })
   }
 
-  const handleRemoveSection = (index: number) => {
-    const newSections = sections.filter((_, i) => i !== index)
-    setSections(newSections)
+  const handleImageEdit = (property: string, value: string) => {
+    if (selectedSection !== null) {
+      const newSections = [...sections]
+      newSections[selectedSection].style = {
+        ...newSections[selectedSection].style,
+        [property]: value,
+      }
+      setSections(newSections)
+    }
   }
 
   const handleDownloadHTML = () => {
@@ -48,34 +107,40 @@ export default function TemplateEditor({ template }: { template: Template }) {
       </head>
       <body style="margin: 0; padding: 0; font-family: Arial, sans-serif;">
         <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-          ${sections.map(section => {
-            const style = Object.entries(section.style || {}).map(([key, value]) => `${key}:${value}`).join(';')
-            switch (section.type) {
-              case 'logo':
-                return `<div style="${style}">${section.content}</div>`
-              case 'header':
-                return `<h1 style="${style}">${section.content}</h1>`
-              case 'paragraph':
-                return `<p style="${style}">${section.content}</p>`
-              case 'button-group':
-                return `<div style="${style}"></div>`
-              case 'button':
-                return `<button style="${style}">${section.content}</button>`
-              case 'image':
-                return `<img src="${section.content}" style="${style}" alt="Template image" />`
-              default:
-                return ''
-            }
-          }).join('\n')}
+          ${sections
+            .map((section) => {
+              const style = Object.entries(section.style || {})
+                .map(([key, value]) => `${key}:${value}`)
+                .join(";")
+              switch (section.type) {
+                case "logo":
+                  return `<div style="${style}">${section.content}</div>`
+                case "header":
+                  return `<h1 style="${style}">${section.content}</h1>`
+                case "paragraph":
+                  return `<p style="${style}">${section.content}</p>`
+                case "button-group":
+                  return `<div style="${style}"></div>`
+                case "button":
+                  return `<button style="${style}">${section.content}</button>`
+                case "image":
+                  // Check if the image is a base64 string or URL
+                  const isBase64 = section.content.startsWith("data:image")
+                  return `<img src="${isBase64 ? section.content : "/placeholder.svg"}" alt="${section || ""}" style="${style}" />`
+                default:
+                  return ""
+              }
+            })
+            .join("\n")}
         </div>
       </body>
       </html>
     `
-    const blob = new Blob([htmlContent], { type: 'text/html' })
+    const blob = new Blob([htmlContent], { type: "text/html" })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
+    const a = document.createElement("a")
     a.href = url
-    a.download = `${name}.html`
+    a.download = `${name || "email-template"}.html`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -83,112 +148,336 @@ export default function TemplateEditor({ template }: { template: Template }) {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row lg:gap-8">
-      {/* Editor Section */}
-      <div className="lg:w-1/2 space-y-4">
-        <div>
-          <label htmlFor="name" className="block text-sm font-medium text-gray-700">Template Name</label>
-          <Input
-            id="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="mt-1"
-          />
-        </div>
-        <div>
-          <label htmlFor="subject" className="block text-sm font-medium text-gray-700">Subject</label>
-          <Input
-            id="subject"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            className="mt-1"
-          />
-        </div>
-        <div>
-          <h3 className="text-lg font-medium">Sections</h3>
-          {sections.map((section, index) => (
-            <div key={index} className="mt-4 p-4 border rounded-md">
-              <select
-                value={section.type}
-                onChange={(e) => handleUpdateSection(index, { ...section, type: e.target.value as TemplateSection['type'] })}
-                className="mb-2 p-2 border rounded"
-              >
-                <option value="logo">Logo</option>
-                <option value="header">Header</option>
-                <option value="paragraph">Paragraph</option>
-                <option value="button-group">Button Group</option>
-                <option value="button">Button</option>
-                <option value="image">Image</option>
-              </select>
-              <Textarea
-                value={section.content}
-                onChange={(e) => handleUpdateSection(index, { ...section, content: e.target.value })}
-                className="mt-1 w-full"
-                rows={3}
-              />
-              <Textarea
-                value={JSON.stringify(section.style, null, 2)}
-                onChange={(e) => {
-                  try {
-                    const style = JSON.parse(e.target.value)
-                    handleUpdateSection(index, { ...section, style })
-                  } catch (error) {
-                    // Invalid JSON, do nothing
-                  }
-                }}
-                className="mt-1 w-full font-mono"
-                rows={3}
-                placeholder="Enter JSON style object"
-              />
-              <Button onClick={() => handleRemoveSection(index)} variant="destructive" className="mt-2">
-                Remove Section
+    <div className="min-h-screen bg-gray-50">
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
+        accept="image/*"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) {
+            handleImageUpload(file)
+          }
+        }}
+      />
+      {/* Top Toolbar */}
+      <div className="sticky top-0 z-10 backdrop-blur-lg border-b bg-white/50">
+        <div className="container mx-auto p-2">
+          <div className="flex items-center justify-between">
+            <Toolbar className="hidden md:flex">
+              <ToolbarButton active={selectedTool === "pointer"} onClick={() => setSelectedTool("pointer")}>
+                <MousePointer className="w-4 h-4" />
+              </ToolbarButton>
+              <ToolbarButton active={selectedTool === "text"} onClick={() => setSelectedTool("text")}>
+                <Type className="w-4 h-4" />
+              </ToolbarButton>
+              <ToolbarButton active={selectedTool === "image"} onClick={() => setSelectedTool("image")}>
+                <ImageIcon className="w-4 h-4" />
+              </ToolbarButton>
+              <ToolbarButton active={selectedTool === "shape"} onClick={() => setSelectedTool("shape")}>
+                <Square className="w-4 h-4" />
+              </ToolbarButton>
+            </Toolbar>
+
+            <Button variant="ghost" className="md:hidden" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
+              <Menu className="w-6 h-6" />
+            </Button>
+
+            <div className="flex items-center gap-2">
+              <Button onClick={handleSave} disabled={isSaving}>
+                <Save className="w-4 h-4 mr-2" />
+                <span className="hidden sm:inline">{isSaving ? "Saving..." : "Save"}</span>
+              </Button>
+              <Button variant="outline" onClick={handleDownloadHTML}>
+                <Download className="w-4 h-4 mr-2" />
+                <span className="hidden sm:inline">Export</span>
               </Button>
             </div>
-          ))}
-          <div className="mt-4 space-x-2">
-            <Button onClick={() => handleAddSection('logo')} variant="outline">Add Logo</Button>
-            <Button onClick={() => handleAddSection('header')} variant="outline">Add Header</Button>
-            <Button onClick={() => handleAddSection('paragraph')} variant="outline">Add Paragraph</Button>
-            <Button onClick={() => handleAddSection('button-group')} variant="outline">Add Button Group</Button>
-            <Button onClick={() => handleAddSection('button')} variant="outline">Add Button</Button>
-            <Button onClick={() => handleAddSection('image')} variant="outline">Add Image</Button>
           </div>
-        </div>
-        <div className="flex space-x-4">
-          <Button onClick={handleSave} disabled={isSaving}>
-            {isSaving ? 'Saving...' : 'Save Template'}
-          </Button>
-          <Button onClick={handleDownloadHTML} variant="outline">
-            Download HTML
-          </Button>
         </div>
       </div>
 
-      {/* Preview Section */}
-      <div className="lg:w-1/2 mt-8 lg:mt-0 p-4 border rounded-md bg-gray-50 overflow-auto">
-        <h2 className="text-xl font-semibold mb-2">Preview</h2>
-        <div className="max-w-2xl mx-auto">
-          {sections.map((section, index) => {
-            const style = section.style || {}
-            switch (section.type) {
-              case 'logo':
-                return <div key={index} style={style}>{section.content}</div>
-              case 'header':
-                return <h1 key={index} style={style}>{section.content}</h1>
-              case 'paragraph':
-                return <p key={index} style={style}>{section.content}</p>
-              case 'button-group':
-                return <div key={index} style={style}></div>
-              case 'button':
-                return <button key={index} style={style}>{section.content}</button>
-              case 'image':
-                return <img key={index} src={section.content || "/placeholder.svg"} style={style} alt="Template" />
-              default:
-                return null
-            }
-          })}
+      {/* Mobile Menu */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="md:hidden bg-white border-b"
+          >
+            <div className="container mx-auto p-4">
+              <Toolbar className="flex-wrap justify-center">
+                <ToolbarButton active={selectedTool === "pointer"} onClick={() => setSelectedTool("pointer")}>
+                  <MousePointer className="w-4 h-4" />
+                </ToolbarButton>
+                <ToolbarButton active={selectedTool === "text"} onClick={() => setSelectedTool("text")}>
+                  <Type className="w-4 h-4" />
+                </ToolbarButton>
+                <ToolbarButton active={selectedTool === "image"} onClick={() => setSelectedTool("image")}>
+                  <ImageIcon className="w-4 h-4" />
+                </ToolbarButton>
+                <ToolbarButton active={selectedTool === "shape"} onClick={() => setSelectedTool("shape")}>
+                  <Square className="w-4 h-4" />
+                </ToolbarButton>
+              </Toolbar>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Main Content */}
+      <div className="container mx-auto p-4">
+        <div className="flex flex-col lg:flex-row gap-4">
+          {/* Left Sidebar */}
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="w-full lg:w-64 flex flex-col gap-4"
+          >
+            <Panel>
+              <PanelHeader>
+                <h3 className="font-medium">Template</h3>
+              </PanelHeader>
+              <div className="p-4 space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Name</label>
+                  <Input value={name} onChange={(e) => setName(e.target.value)} className="mt-1" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Subject</label>
+                  <Input value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1" />
+                </div>
+              </div>
+            </Panel>
+
+            <Panel>
+              <PanelHeader>
+                <h3 className="font-medium">Add Section</h3>
+              </PanelHeader>
+              <div className="p-4 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-2">
+                {allowedSectionTypes.includes("header") && (
+                  <Button
+                    variant="outline"
+                    className="h-20 flex flex-col items-center justify-center"
+                    onClick={() => handleAddSection("header")}
+                  >
+                    <Type className="w-5 h-5 mb-1" />
+                    Header
+                  </Button>
+                )}
+                {allowedSectionTypes.includes("paragraph") && (
+                  <Button
+                    variant="outline"
+                    className="h-20 flex flex-col items-center justify-center"
+                    onClick={() => handleAddSection("paragraph")}
+                  >
+                    <AlignLeft className="w-5 h-5 mb-1" />
+                    Text
+                  </Button>
+                )}
+                {allowedSectionTypes.includes("button") && (
+                  <Button
+                    variant="outline"
+                    className="h-20 flex flex-col items-center justify-center"
+                    onClick={() => handleAddSection("button")}
+                  >
+                    <Square className="w-5 h-5 mb-1" />
+                    Button
+                  </Button>
+                )}
+                {allowedSectionTypes.includes("image") && (
+                  <Button
+                    variant="outline"
+                    className="h-20 flex flex-col items-center justify-center"
+                    onClick={() => handleAddSection("image")}
+                  >
+                    <ImageIcon className="w-5 h-5 mb-1" />
+                    Image
+                  </Button>
+                )}
+              </div>
+            </Panel>
+          </motion.div>
+
+          {/* Main Editor */}
+          <motion.div layout className="flex-1 min-h-[400px] lg:min-h-[800px] bg-white rounded-lg shadow-sm border">
+            <div className="p-4 lg:p-8">
+              <AnimatePresence>
+                {sections.map((section, index) => (
+                  <motion.div
+                    key={index}
+                    layout
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    className={cn(
+                      "p-4 rounded-lg border-2 border-transparent hover:border-blue-200 cursor-pointer transition-colors",
+                      selectedSection === index && "border-blue-500",
+                    )}
+                    onClick={() => setSelectedSection(index)}
+                  >
+                    {section.type === "header" && <h1 style={section.style}>{section.content || "Header Text"}</h1>}
+                    {section.type === "paragraph" && <p style={section.style}>{section.content || "Paragraph Text"}</p>}
+                    {section.type === "button" && <button style={section.style}>{section.content || "Button"}</button>}
+                    {section.type === "image" && (
+                      <img
+                        src={section.content || "/placeholder.svg"}
+                        // alt={section.alt || "Template image"}
+                        style={section.style}
+                        className="max-w-full"
+                      />
+                    )}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          </motion.div>
+
+          {/* Right Sidebar */}
+          <AnimatePresence>
+            {selectedSection !== null && (
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                className="w-full lg:w-64"
+              >
+                <Panel>
+                  <PanelHeader>
+                    <h3 className="font-medium">Style</h3>
+                  </PanelHeader>
+                  <div className="p-4 space-y-4">
+                    {sections[selectedSection].type === "image" ? (
+                      <>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">Image URL</label>
+                          <Input
+                            value={sections[selectedSection].content}
+                            onChange={(e) => {
+                              const newSections = [...sections]
+                              newSections[selectedSection].content = e.target.value
+                              setSections(newSections)
+                            }}
+                            className="mt-1"
+                          />
+                        </div>
+                        {/* <div>
+                          <label className="text-sm font-medium text-gray-700">Alt Text</label>
+                          <Input
+                            value={sections[selectedSection]?.alt || ""}
+                            onChange={(e) => {
+                              const newSections = [...sections]
+                              newSections[selectedSection]?.alt = e.target.value
+                              setSections(newSections)
+                            }}
+                            className="mt-1"
+                          />
+                        </div> */}
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">Width</label>
+                          <Input
+                            value={sections[selectedSection].style?.width || "100%"}
+                            onChange={(e) => handleImageEdit("width", e.target.value)}
+                            className="mt-1"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">Height</label>
+                          <Input
+                            value={sections[selectedSection].style?.height || "auto"}
+                            onChange={(e) => handleImageEdit("height", e.target.value)}
+                            className="mt-1"
+                          />
+                        </div>
+                        <Button onClick={() => fileInputRef.current?.click()} className="w-full">
+                          Upload New Image
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">Content</label>
+                          <Textarea
+                            value={sections[selectedSection].content}
+                            onChange={(e) => {
+                              const newSections = [...sections]
+                              newSections[selectedSection].content = e.target.value
+                              setSections(newSections)
+                            }}
+                            className="mt-1"
+                            rows={3}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">Colors</label>
+                          <div className="mt-2 space-y-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm">Text:</span>
+                              <ColorPicker
+                                color={sections[selectedSection].style?.color || "#000000"}
+                                onChange={(color) => {
+                                  const newSections = [...sections]
+                                  newSections[selectedSection].style = {
+                                    ...newSections[selectedSection].style,
+                                    color,
+                                  }
+                                  setSections(newSections)
+                                }}
+                              />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm">Background:</span>
+                              <ColorPicker
+                                color={sections[selectedSection].style?.backgroundColor || "#FFFFFF"}
+                                onChange={(color) => {
+                                  const newSections = [...sections]
+                                  newSections[selectedSection].style = {
+                                    ...newSections[selectedSection].style,
+                                    backgroundColor: color,
+                                  }
+                                  setSections(newSections)
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">Alignment</label>
+                          <div className="mt-2">
+                            <Toolbar>
+                              <ToolbarButton
+                                active={sections[selectedSection].style?.textAlign === "left"}
+                                onClick={() => handleImageEdit("textAlign", "left")}
+                              >
+                                <AlignLeft className="w-4 h-4" />
+                              </ToolbarButton>
+                              <ToolbarButton
+                                active={sections[selectedSection].style?.textAlign === "center"}
+                                onClick={() => handleImageEdit("textAlign", "center")}
+                              >
+                                <AlignCenter className="w-4 h-4" />
+                              </ToolbarButton>
+                              <ToolbarButton
+                                active={sections[selectedSection].style?.textAlign === "right"}
+                                onClick={() => handleImageEdit("textAlign", "right")}
+                              >
+                                <AlignRight className="w-4 h-4" />
+                              </ToolbarButton>
+                            </Toolbar>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </Panel>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </div>
   )
 }
+
