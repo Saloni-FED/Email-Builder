@@ -26,6 +26,7 @@ import {
   Download,
   Plus,
   Menu,
+  Trash2,
 } from "lucide-react"
 
 export default function TemplateEditor({ template }: { template: Template }) {
@@ -65,10 +66,10 @@ export default function TemplateEditor({ template }: { template: Template }) {
     setSelectedSection(sections.length)
   }
 
-  const handleImageUpload = async (file: File) => {
-    return new Promise<string>((resolve) => {
+  const handleImageUpload = async (file: File): Promise<{ dataUrl: string; serverUrl: string }> => {
+    return new Promise(async (resolve, reject) => {
       const reader = new FileReader()
-      reader.onloadend = () => {
+      reader.onloadend = async () => {
         if (typeof reader.result === "string") {
           if (selectedSection !== null) {
             const newSections = [...sections]
@@ -77,13 +78,45 @@ export default function TemplateEditor({ template }: { template: Template }) {
               content: reader.result,
             }
             setSections(newSections)
-            resolve(reader.result)
+
+            // Upload to backend
+            try {
+              const formData = new FormData()
+              formData.append("file", file)
+
+              const response = await fetch("/api/uploadImage", {
+                method: "POST",
+                body: formData,
+              })
+
+              if (!response.ok) {
+                throw new Error("Failed to upload image to server")
+              }
+
+              const { url: serverUrl } = await response.json()
+
+              resolve({
+                dataUrl: reader.result,
+                serverUrl,
+              })
+            } catch (error) {
+              console.error("Error uploading image:", error)
+              reject(error)
+            }
+          } else {
+            reject(new Error("No section selected"))
           }
+        } else {
+          reject(new Error("Failed to read file"))
         }
+      }
+      reader.onerror = () => {
+        reject(new Error("Failed to read file"))
       }
       reader.readAsDataURL(file)
     })
   }
+
 
   const handleImageEdit = (property: string, value: string) => {
     if (selectedSection !== null) {
@@ -98,44 +131,76 @@ export default function TemplateEditor({ template }: { template: Template }) {
 
   const handleDownloadHTML = () => {
     const htmlContent = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>${subject}</title>
-      </head>
-      <body style="margin: 0; padding: 0; font-family: Arial, sans-serif;">
-        <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-          ${sections
-            .map((section) => {
-              const style = Object.entries(section.style || {})
-                .map(([key, value]) => `${key}:${value}`)
-                .join(";")
-              switch (section.type) {
-                case "logo":
-                  return `<div style="${style}">${section.content}</div>`
-                case "header":
-                  return `<h1 style="${style}">${section.content}</h1>`
-                case "paragraph":
-                  return `<p style="${style}">${section.content}</p>`
-                case "button-group":
-                  return `<div style="${style}"></div>`
-                case "button":
-                  return `<button style="${style}">${section.content}</button>`
-                case "image":
-                  // Check if the image is a base64 string or URL
-                  const isBase64 = section.content.startsWith("data:image")
-                  return `<img src="${isBase64 ? section.content : "/placeholder.svg"}" alt="${section || ""}" style="${style}" />`
-                default:
-                  return ""
-              }
-            })
-            .join("\n")}
-        </div>
-      </body>
-      </html>
-    `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>${subject}</title>
+      <style>
+        body {
+          margin: 0;
+          padding: 0;
+          font-family: Arial, sans-serif;
+          background-color: #ffffff;
+        }
+        .container {
+          max-width: 600px;
+          margin: 0 auto;
+          padding: 20px;
+        }
+        .button {
+          display: inline-block;
+          padding: 12px 24px;
+          background-color: #000000;
+          color: #ffffff;
+          text-decoration: none;
+          border-radius: 6px;
+          font-weight: 500;
+          font-size: 16px;
+          margin-bottom: 40px;
+          border: none;
+        }
+        .button:hover {
+          opacity: 0.9;
+        }
+        .image-container {
+          background-color: #f5f5f5;
+          padding: 20px;
+          border-radius: 8px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        ${sections
+          .map((section) => {
+            const style = Object.entries(section.style || {})
+              .map(([key, value]) => `${key}:${value}`)
+              .join(";")
+            switch (section.type) {
+              case "header":
+                return `<h1 style="${style}">${section.content}</h1>`
+              case "paragraph":
+                return `<p style="${style}">${section.content}</p>`
+              case "button":
+                return `<a href="#" class="button" style="${style}">${section.content}</a>`
+              case "image":
+                const isBase64 = section.content.startsWith("data:image")
+                return `<div class="image-container">
+                  <img src="${isBase64 ? section.content : "/placeholder.svg"}" 
+                       alt="${ ""}" 
+                       style="${style}" />
+                </div>`
+              default:
+                return ""
+            }
+          })
+          .join("\n")}
+      </div>
+    </body>
+    </html>
+  `
     const blob = new Blob([htmlContent], { type: "text/html" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
@@ -313,18 +378,31 @@ export default function TemplateEditor({ template }: { template: Template }) {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -20 }}
                     className={cn(
-                      "p-4 rounded-lg border-2 border-transparent hover:border-blue-200 cursor-pointer transition-colors",
+                      "p-4 rounded-lg border-2 border-transparent hover:border-blue-200 cursor-pointer transition-colors relative group",
                       selectedSection === index && "border-blue-500",
                     )}
                     onClick={() => setSelectedSection(index)}
                   >
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const newSections = sections.filter((_, i) => i !== index)
+                        setSections(newSections)
+                        setSelectedSection(null)
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                     {section.type === "header" && <h1 style={section.style}>{section.content || "Header Text"}</h1>}
                     {section.type === "paragraph" && <p style={section.style}>{section.content || "Paragraph Text"}</p>}
                     {section.type === "button" && <button style={section.style}>{section.content || "Button"}</button>}
                     {section.type === "image" && (
                       <img
                         src={section.content || "/placeholder.svg"}
-                        // alt={section.alt || "Template image"}
+                        alt={ "Template image"}
                         style={section.style}
                         className="max-w-full"
                       />
@@ -363,18 +441,18 @@ export default function TemplateEditor({ template }: { template: Template }) {
                             className="mt-1"
                           />
                         </div>
-                        {/* <div>
+                        <div>
                           <label className="text-sm font-medium text-gray-700">Alt Text</label>
-                          <Input
-                            value={sections[selectedSection]?.alt || ""}
+                          {/* <Input
+                            value={sections[selectedSection].alt || ""}
                             onChange={(e) => {
                               const newSections = [...sections]
-                              newSections[selectedSection]?.alt = e.target.value
+                              newSections[selectedSection].alt = e.target.value
                               setSections(newSections)
                             }}
                             className="mt-1"
-                          />
-                        </div> */}
+                          /> */}
+                        </div>
                         <div>
                           <label className="text-sm font-medium text-gray-700">Width</label>
                           <Input
