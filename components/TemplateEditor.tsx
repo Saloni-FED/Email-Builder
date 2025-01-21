@@ -43,9 +43,38 @@ export default function TemplateEditor({ template }: { template: Template }) {
 
   const handleSave = async () => {
     setIsSaving(true)
-    await saveTemplate({ ...template, name, subject, sections })
-    setIsSaving(false)
-    router.push("/")
+    const templateData = {
+      name,
+      subject,
+      sections: sections.map((section) => ({
+        type: section.type,
+        content: section.content,
+        style: section.style,
+      })),
+    }
+
+    try {
+      const response = await fetch("/api/uploadEmailConfig", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(templateData),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to save template")
+      }
+
+      const savedTemplate = await response.json()
+      console.log("Template saved successfully:", savedTemplate)
+      router.push("/")
+    } catch (error) {
+      console.error("Error saving template:", error)
+      // You might want to show an error message to the user here
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleAddSection = (type: TemplateSection["type"]) => {

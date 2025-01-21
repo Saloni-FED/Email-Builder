@@ -61,7 +61,7 @@ const templates: Template[] = [
       },
       {
         type: "image",
-        content: "/placeholder.svg",
+        content: "/dummy-2.avif",
         style: {
           width: "100%",
           maxWidth: "600px",

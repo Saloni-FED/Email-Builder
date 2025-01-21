@@ -1,16 +1,28 @@
-import { NextResponse } from 'next/server'
-import { saveTemplate } from '@/lib/db'
-import { Template } from '@/lib/types'
+import { NextResponse } from "next/server"
+import { MongoClient } from "mongodb"
+
+const uri : any = process.env.MONGODB_URI
+const client = new MongoClient(uri)
 
 export async function POST(request: Request) {
   try {
+    const templateData = await request.json()
 
-    const template = await request.json() as Template
-    // console.log(template)
-    // const savedTemplate = await saveTemplate(template)
-    // return NextResponse.json(savedTemplate)
+    await client.connect()
+    const database = client.db("email_templates")
+    const collection = database.collection("templates")
+
+    const result = await collection.insertOne(templateData)
+
+    return NextResponse.json({
+      message: "Template saved successfully",
+      templateId: result.insertedId,
+    })
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to save template' }, { status: 500 })
+    console.error("Error saving template:", error)
+    return NextResponse.json({ error: "Failed to save template" }, { status: 500 })
+  } finally {
+    await client.close()
   }
 }
 
